@@ -22,10 +22,10 @@ def require_env() -> None:
         raise RuntimeError("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in backend/.env")
 
 
-def fetch_flights() -> list[dict]:
+def fetch_flights() -> tuple[list[dict], set[int]]:
     require_env()
     sb = create_client(SUPABASE_URL, SUPABASE_KEY)
-    return (
+    flights = (
         sb.table("flights")
         .select(
             "flight_id, airline_id, route_id, flight_status, delay_minutes, scheduled_departure, "
@@ -35,15 +35,33 @@ def fetch_flights() -> list[dict]:
         .data
         or []
     )
+    delay_logs = (
+        sb.table("delay_logs")
+        .select("flight_id, delay_minutes")
+        .execute()
+        .data
+        or []
+    )
+    delayed_ids = {
+        log["flight_id"]
+        for log in delay_logs
+        if (log.get("delay_minutes") or 0) >= 15
+    }
+    return flights, delayed_ids
 
 
-def build_dataset(rows: list[dict]) -> pd.DataFrame:
+def build_dataset(rows: list[dict], delayed_ids: set[int]) -> pd.DataFrame:
     records = []
     for row in rows:
         dep = pd.to_datetime(row.get("scheduled_departure"), errors="coerce")
         delay_minutes = row.get("delay_minutes") or 0
         status = row.get("flight_status")
         route = row.get("route") or {}
+        is_delayed = int(
+            delay_minutes >= 15
+            or status in {"delayed", "cancelled"}
+            or row.get("flight_id") in delayed_ids
+        )
         records.append(
             {
                 "airline_id": row.get("airline_id") or 0,
@@ -54,15 +72,16 @@ def build_dataset(rows: list[dict]) -> pd.DataFrame:
                 "available_seats": row.get("available_seats") or 0,
                 "price_economy": row.get("price_economy") or 0,
                 "price_business": row.get("price_business") or 0,
-                "is_delayed": int(delay_minutes >= 15 or status in {"delayed", "cancelled"}),
+                "is_delayed": is_delayed,
             }
         )
     return pd.DataFrame(records)
 
 
 def main() -> None:
-    rows = fetch_flights()
-    df = build_dataset(rows)
+    rows, delayed_ids = fetch_flights()
+    print(f"Fetched {len(rows)} flights, {len(delayed_ids)} with delay log records.")
+    df = build_dataset(rows, delayed_ids)
     if df.empty:
         raise RuntimeError("No flight rows found in Supabase.")
     if df["is_delayed"].nunique() < 2:
