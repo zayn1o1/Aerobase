@@ -1,6 +1,4 @@
 import os
-from heapq import heappop, heappush
-from itertools import count
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -93,64 +91,40 @@ def a_star_gate_plan(
     gates: list[dict[str, Any]],
     existing_assignments: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """A* search over unassigned flights to minimize gate conflicts and assignment cost."""
-    if not flights:
-        return []
+    """Best-first greedy gate assignment: for each flight pick the lowest-cost conflict-free gate."""
+    result: list[dict[str, Any]] = []
+    planned: list[dict[str, Any]] = []
 
-    min_gate_cost = min((gate_cost(gate, flights[0]) for gate in gates), default=80.0)
-
-    def heuristic(index: int) -> float:
-        return (len(flights) - index) * min_gate_cost
-
-    def candidates_for(flight: dict[str, Any], planned: list[dict[str, Any]]) -> list[dict[str, Any] | None]:
+    for flight in flights:
         all_assignments = existing_assignments + planned
         available = [
-            gate
-            for gate in gates
+            gate for gate in gates
             if not gate_conflicts(gate["gate_id"], flight, all_assignments)
         ]
-        ranked = sorted(available, key=lambda gate: gate_cost(gate, flight))[:5]
-        return ranked + [None]
 
-    queue: list[tuple[float, float, int, int, list[dict[str, Any]]]] = []
-    sequence = count()
-    heappush(queue, (heuristic(0), 0.0, next(sequence), 0, []))
+        if available:
+            best = min(available, key=lambda g: gate_cost(g, flight))
+            assignment = {
+                "flight_id": flight["flight_id"],
+                "gate": best,
+                "gate_id": best["gate_id"],
+                "cost": gate_cost(best, flight),
+                "start_time": flight.get("scheduled_departure"),
+                "end_time": flight.get("scheduled_arrival"),
+            }
+        else:
+            assignment = {
+                "flight_id": flight["flight_id"],
+                "gate": None,
+                "cost": 80.0,
+                "start_time": flight.get("scheduled_departure"),
+                "end_time": flight.get("scheduled_arrival"),
+            }
 
-    while queue:
-        _, path_cost, _, index, planned = heappop(queue)
-        if index == len(flights):
-            return planned
+        result.append(assignment)
+        planned.append(assignment)
 
-        flight = flights[index]
-        for gate in candidates_for(flight, planned):
-            if gate is None:
-                step_cost = 80.0
-                next_assignment = {
-                    "flight_id": flight["flight_id"],
-                    "gate": None,
-                    "cost": step_cost,
-                    "start_time": flight.get("scheduled_departure"),
-                    "end_time": flight.get("scheduled_arrival"),
-                }
-            else:
-                step_cost = gate_cost(gate, flight)
-                next_assignment = {
-                    "flight_id": flight["flight_id"],
-                    "gate": gate,
-                    "cost": step_cost,
-                    "start_time": flight.get("scheduled_departure"),
-                    "end_time": flight.get("scheduled_arrival"),
-                    "gate_id": gate["gate_id"],
-                }
-            next_index = index + 1
-            next_cost = path_cost + step_cost
-            next_planned = planned + [next_assignment]
-            heappush(
-                queue,
-                (next_cost + heuristic(next_index), next_cost, next(sequence), next_index, next_planned),
-            )
-
-    return []
+    return result
 
 
 def load_model() -> dict[str, Any] | None:
@@ -368,6 +342,87 @@ def run_all_recommendations() -> dict[str, Any]:
         "inserted": gate_result["inserted"] + alt_result["inserted"],
         "gate_recommendations": gate_result["inserted"],
         "alternative_flight_recommendations": alt_result["inserted"],
+    }
+
+
+@app.get("/recommend-gate/{flight_id}")
+def recommend_gate_for_flight(flight_id: int) -> dict[str, Any]:
+    sb = get_supabase()
+    flight = (
+        sb.table("flights")
+        .select(
+            "flight_id, flight_number, scheduled_departure, scheduled_arrival, "
+            "flight_status, route:routes(origin:airports!routes_origin_id_fkey(iata_code))"
+        )
+        .eq("flight_id", flight_id)
+        .single()
+        .execute()
+        .data
+    )
+    if not flight:
+        raise HTTPException(status_code=404, detail="Flight not found")
+
+    assignments = (
+        sb.table("gate_assignments")
+        .select("flight_id, gate_id, start_time, end_time")
+        .execute()
+        .data
+        or []
+    )
+    gates = (
+        sb.table("gates")
+        .select(
+            "gate_id, gate_code, gate_type, has_jetbridge, max_aircraft_size, "
+            "terminal:terminals(terminal_code, airport:airports(iata_code))"
+        )
+        .eq("is_operational", True)
+        .execute()
+        .data
+        or []
+    )
+
+    planned = a_star_gate_plan([flight], gates, assignments)
+    result = planned[0] if planned else None
+    best = result.get("gate") if result else None
+
+    if best:
+        terminal = (best.get("terminal") or {}).get("terminal_code", "?")
+        airport = ((best.get("terminal") or {}).get("airport") or {}).get("iata_code", "?")
+        dep = parse_time(flight.get("scheduled_departure"))
+        dep_label = dep.strftime("%Y-%m-%d %H:%M") if dep else "scheduled time"
+        score = round(max(40.0, 100.0 - result["cost"]), 1)
+        rec_text = (
+            f"Recommend Gate {best['gate_code']} at Terminal {terminal} ({airport}) "
+            f"for flight {flight['flight_number']} departing {dep_label}; "
+            f"gate is free during the flight window"
+            + (", and has a jetbridge." if best.get("has_jetbridge") else ".")
+        )
+        insert_recommendations(sb, [{
+            "rec_type": "gate_assignment",
+            "generated_for": "flight",
+            "entity_id": flight_id,
+            "recommendation_text": rec_text,
+            "score": score,
+        }])
+        return {
+            "flight_id": flight_id,
+            "flight_number": flight.get("flight_number"),
+            "gate_code": best["gate_code"],
+            "terminal": terminal,
+            "airport": airport,
+            "has_jetbridge": best.get("has_jetbridge", False),
+            "gate_type": best.get("gate_type"),
+            "score": score,
+            "assigned": True,
+        }
+
+    return {
+        "flight_id": flight_id,
+        "flight_number": flight.get("flight_number"),
+        "assigned": False,
+        "gate_code": None,
+        "terminal": None,
+        "airport": None,
     }
 
 
