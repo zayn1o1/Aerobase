@@ -1,0 +1,1 @@
+uvicorn backend.main:app --port 8010 --reload
