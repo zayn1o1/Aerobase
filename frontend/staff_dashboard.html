@@ -136,6 +136,15 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 .engine-btn:hover { border-color: var(--accent); color: var(--accent2); }
 .engine-btn.running { opacity: 0.6; cursor: not-allowed; }
 
+/* DELAY PREDICTION */
+.risk-high   { background: rgba(239,68,68,0.12); color: var(--danger); }
+.risk-medium { background: rgba(245,158,11,0.12); color: var(--gold); }
+.risk-low    { background: rgba(16,185,129,0.12); color: var(--success); }
+.prob-bar-bg { height: 5px; background: var(--bg3); border-radius: 3px; overflow: hidden; width: 80px; display: inline-block; vertical-align: middle; margin-left: 6px; }
+.prob-bar    { height: 5px; border-radius: 3px; }
+.delay-pred-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin-top: 1.5rem; }
+.delay-pred-panel-title { padding: 1rem 1.25rem; background: var(--bg3); border-bottom: 1px solid var(--border); font-family: var(--font-head); font-size: 14px; font-weight: 600; }
+
 </style>
 </head>
 <body>
@@ -250,9 +259,15 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         <div class="engine-btns">
           <button class="engine-btn" id="btn-gate" onclick="runGateRecommendations(this)">🚪 Gate Assignments</button>
           <button class="engine-btn" id="btn-rebook" onclick="runRebookingRecommendations(this)">✈️ Alternative Flights</button>
+          <button class="engine-btn" id="btn-delay" onclick="runDelayPredictions(this)">📊 Delay Predictions</button>
           <button class="engine-btn" id="btn-all" onclick="runAllRecommendations(this)">⚡ Run All</button>
         </div>
         <div id="engine-msg" class="msg" style="margin-top:1rem;"></div>
+      </div>
+
+      <div id="delay-pred-panel" class="delay-pred-panel" style="display:none;">
+        <div class="delay-pred-panel-title">📊 Flight Delay Risk Overview</div>
+        <div id="delay-pred-table"><div class="loading">Loading…</div></div>
       </div>
 
       <div id="rec-list"><div class="empty"><div class="empty-icon">🤖</div><div>Click a button above to generate recommendations</div></div></div>
@@ -384,6 +399,17 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   </div>
 </div>
 
+<!-- DELAY PREDICT MODAL -->
+<div class="modal-overlay" id="delay-predict-modal">
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-title">Delay Prediction</div>
+    <div id="dpm-content"><div class="loading">Analyzing…</div></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" style="flex:1;padding:11px;" onclick="closeModal('delay-predict-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 const SUPABASE_URL = 'https://wsdbhfxucobeqfhjcggk.supabase.co';
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzZGJoZnh1Y29iZXFmaGpjZ2drIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzkyMTgsImV4cCI6MjA5MTQxNTIxOH0.AhypTE69OECtY0Nt6bA-iaJIWhp6tfsbx4FN8g2mSGQ';
@@ -502,8 +528,9 @@ async function loadFlights() {
       <td>${new Date(f.scheduled_arrival).toLocaleString([], {dateStyle:'short', timeStyle:'short'})}</td>
       <td><span class="pill p-${f.flight_status}">${f.flight_status}</span></td>
       <td>${f.available_seats}</td>
-      <td style="display:flex;gap:6px;">
+      <td style="display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn-sm" onclick="editFlight(${f.flight_id})">Edit</button>
+        <button class="btn-sm" onclick="predictDelay(${f.flight_id}, '${f.flight_number}')">Predict</button>
         <select style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;" onchange="updateFlightStatus(${f.flight_id}, this.value)">
           <option value="">Update status</option>
           <option value="scheduled">Scheduled</option>
@@ -820,6 +847,93 @@ async function runAllRecommendations(btn) {
     setEngineMsg('error', err.message + ' Make sure FastAPI is running on port 8010.');
   } finally {
     btn.classList.remove('running'); btn.textContent = '⚡ Run All';
+  }
+}
+
+// ---- DELAY PREDICTION ----
+async function predictDelay(flightId, flightNumber) {
+  document.getElementById('dpm-content').innerHTML = '<div class="loading">Analyzing…</div>';
+  document.getElementById('delay-predict-modal').classList.add('open');
+  try {
+    const res = await fetch(`${AI_API_BASE}/predict-delay/${flightId}`);
+    if (!res.ok) throw new Error('Backend returned ' + res.status);
+    const d = await res.json();
+    const pct = Math.round(d.delay_probability * 100);
+    const riskClass = d.risk_level === 'high' ? 'risk-high' : d.risk_level === 'medium' ? 'risk-medium' : 'risk-low';
+    const barColor  = d.risk_level === 'high' ? 'var(--danger)' : d.risk_level === 'medium' ? 'var(--gold)' : 'var(--success)';
+    const advice = d.risk_level === 'high'
+      ? 'This flight has a <strong style="color:var(--danger)">high probability of delay</strong>. Consider notifying passengers and preparing alternative arrangements.'
+      : d.risk_level === 'medium'
+      ? 'This flight has a <strong style="color:var(--gold)">moderate delay risk</strong>. Monitor conditions and have contingency plans ready.'
+      : 'This flight has a <strong style="color:var(--success)">low delay risk</strong>. No immediate action required.';
+    document.getElementById('dpm-content').innerHTML = `
+      <div style="text-align:center;padding:1rem 0 1.5rem;">
+        <div style="font-size:40px;margin-bottom:0.5rem;">✈️</div>
+        <div style="font-family:var(--font-head);font-size:20px;font-weight:700;margin-bottom:4px;">${flightNumber}</div>
+        <div style="color:var(--muted);font-size:12px;font-family:var(--font-mono);margin-bottom:1.5rem;">${d.model_loaded ? 'RandomForest ML Model Active' : 'Using Heuristic Fallback'}</div>
+        <div style="font-size:52px;font-family:var(--font-head);font-weight:700;line-height:1;margin-bottom:10px;">${pct}%</div>
+        <div style="width:200px;margin:0 auto 1.25rem;background:var(--bg3);border-radius:4px;overflow:hidden;height:8px;">
+          <div style="width:${pct}%;height:8px;background:${barColor};border-radius:4px;transition:width 0.5s;"></div>
+        </div>
+        <span class="pill ${riskClass}" style="font-size:12px;padding:5px 18px;">${d.risk_level.toUpperCase()} RISK</span>
+      </div>
+      <div style="background:var(--bg3);border-radius:8px;padding:1rem;font-size:13px;color:var(--muted);line-height:1.7;">${advice}</div>`;
+  } catch (err) {
+    document.getElementById('dpm-content').innerHTML = `<div class="msg error">Could not reach AI backend. Make sure FastAPI is running on port 8010.<br><small>${err.message}</small></div>`;
+  }
+}
+
+async function runDelayPredictions(btn) {
+  btn.classList.add('running'); btn.textContent = '📊 Analyzing…';
+  const panel = document.getElementById('delay-pred-panel');
+  const tableDiv = document.getElementById('delay-pred-table');
+  panel.style.display = 'block';
+  tableDiv.innerHTML = '<div class="loading">Fetching flights and running predictions…</div>';
+  try {
+    const { data: flights } = await sb.from('flights').select(`
+      flight_id, flight_number, flight_status,
+      route:routes(origin:airports!routes_origin_id_fkey(iata_code), destination:airports!routes_destination_id_fkey(iata_code))
+    `).in('flight_status', ['scheduled','boarding','delayed','cancelled']).order('scheduled_departure').limit(30);
+
+    if (!flights || flights.length === 0) {
+      tableDiv.innerHTML = '<div class="empty"><div class="empty-icon">✈️</div><div>No active flights to analyze.</div></div>';
+      return;
+    }
+
+    const results = await Promise.all(flights.map(async f => {
+      try {
+        const res = await fetch(`${AI_API_BASE}/predict-delay/${f.flight_id}`);
+        const d = await res.json();
+        return { ...f, delay_probability: d.delay_probability, risk_level: d.risk_level, model_loaded: d.model_loaded };
+      } catch {
+        return { ...f, delay_probability: null, risk_level: 'unknown' };
+      }
+    }));
+
+    results.sort((a, b) => (b.delay_probability ?? -1) - (a.delay_probability ?? -1));
+
+    const riskClass = r => r === 'high' ? 'risk-high' : r === 'medium' ? 'risk-medium' : r === 'low' ? 'risk-low' : 'p-scheduled';
+    tableDiv.innerHTML = `<table>
+      <thead><tr><th>Flight</th><th>Route</th><th>Status</th><th>Delay Probability</th><th>Risk</th><th></th></tr></thead>
+      <tbody>${results.map(f => {
+        const pct = f.delay_probability !== null ? Math.round(f.delay_probability * 100) : null;
+        const barColor = f.risk_level === 'high' ? 'var(--danger)' : f.risk_level === 'medium' ? 'var(--gold)' : 'var(--success)';
+        return `<tr>
+          <td class="mono">${f.flight_number}</td>
+          <td>${f.route?.origin?.iata_code || '?'} → ${f.route?.destination?.iata_code || '?'}</td>
+          <td><span class="pill p-${f.flight_status}">${f.flight_status}</span></td>
+          <td>${pct !== null
+            ? `<div style="display:flex;align-items:center;gap:8px;"><span style="font-family:var(--font-mono);font-size:12px;min-width:32px;">${pct}%</span><div class="prob-bar-bg"><div class="prob-bar" style="width:${pct}%;background:${barColor};"></div></div></div>`
+            : '<span style="color:var(--muted2)">—</span>'}</td>
+          <td>${f.risk_level !== 'unknown' ? `<span class="pill ${riskClass(f.risk_level)}">${f.risk_level}</span>` : '—'}</td>
+          <td><button class="btn-sm" onclick="predictDelay(${f.flight_id}, '${f.flight_number}')">Details</button></td>
+        </tr>`;
+      }).join('')}</tbody>
+    </table>`;
+  } catch (err) {
+    tableDiv.innerHTML = `<div class="msg error" style="margin:1rem;">${err.message}. Make sure FastAPI is running on port 8010.</div>`;
+  } finally {
+    btn.classList.remove('running'); btn.textContent = '📊 Delay Predictions';
   }
 }
 
