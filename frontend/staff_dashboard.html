@@ -1,0 +1,840 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AeroBase — Staff Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #080c14; --bg2: #0d1320; --bg3: #111827; --bg4: #1a2235;
+  --border: rgba(255,255,255,0.07); --border2: rgba(255,255,255,0.14);
+  --text: #f0f4ff; --muted: #8a93a8; --muted2: #5a6478;
+  --accent: #3b7eff; --accent2: #60a5fa;
+  --gold: #f59e0b; --danger: #ef4444; --success: #10b981;
+  --font-head: 'Syne', sans-serif;
+  --font-body: 'DM Sans', sans-serif;
+  --font-mono: 'DM Mono', monospace;
+}
+body { background: var(--bg); color: var(--text); font-family: var(--font-body); min-height: 100vh; display: flex; }
+
+/* SIDEBAR */
+.sidebar {
+  width: 220px; flex-shrink: 0; background: var(--bg2);
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  position: sticky; top: 0; height: 100vh; overflow-y: auto;
+}
+.sidebar-logo { padding: 1.5rem; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; }
+.logo-icon { width: 30px; height: 30px; background: var(--accent); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+.logo-text { font-family: var(--font-head); font-size: 16px; font-weight: 800; }
+.sidebar-label { font-size: 10px; color: var(--muted2); letter-spacing: 1.5px; text-transform: uppercase; padding: 1rem 1.25rem 0.5rem; font-family: var(--font-mono); }
+.nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 1.25rem; color: var(--muted); font-size: 13px; cursor: pointer; transition: all 0.2s; border-left: 2px solid transparent; }
+.nav-item:hover { color: var(--text); background: var(--bg3); }
+.nav-item.active { color: var(--text); background: var(--bg3); border-left-color: var(--accent); }
+.nav-icon { font-size: 15px; width: 20px; text-align: center; }
+.sidebar-bottom { margin-top: auto; padding: 1rem; border-top: 1px solid var(--border); }
+.staff-badge { font-size: 12px; color: var(--muted); margin-bottom: 8px; }
+.staff-email { font-family: var(--font-mono); font-size: 11px; color: var(--accent2); margin-bottom: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.logout-btn { width: 100%; padding: 8px; background: transparent; border: 1px solid var(--border2); color: var(--muted); font-size: 12px; border-radius: 6px; cursor: pointer; font-family: var(--font-body); transition: all 0.2s; }
+.logout-btn:hover { color: #fca5a5; border-color: var(--danger); }
+
+/* MAIN */
+.main { flex: 1; overflow-y: auto; min-height: 100vh; }
+.topbar { padding: 0 2rem; height: 56px; background: var(--bg2); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 50; }
+.page-title-bar { font-family: var(--font-head); font-size: 18px; font-weight: 700; }
+.content { padding: 2rem; max-width: 1200px; }
+
+.section { display: none; }
+.section.active { display: block; }
+
+/* STATS ROW */
+.stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 2rem; }
+.stat-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; }
+.stat-label { font-size: 11px; color: var(--muted); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+.stat-value { font-family: var(--font-head); font-size: 28px; font-weight: 700; }
+.stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+/* SECTION HEADER */
+.section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
+.section-title { font-family: var(--font-head); font-size: 20px; font-weight: 700; }
+.btn-primary { padding: 9px 18px; background: var(--accent); color: white; border: none; border-radius: 8px; font-family: var(--font-head); font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+.btn-primary:hover { background: #2563eb; }
+.btn-ghost { padding: 9px 16px; background: transparent; border: 1px solid var(--border2); color: var(--muted); border-radius: 8px; font-size: 13px; cursor: pointer; font-family: var(--font-body); transition: all 0.2s; }
+.btn-ghost:hover { color: var(--text); }
+.btn-sm { padding: 5px 12px; font-size: 12px; border-radius: 6px; cursor: pointer; border: 1px solid var(--border2); background: transparent; color: var(--muted); font-family: var(--font-body); transition: all 0.2s; }
+.btn-sm:hover { color: var(--text); border-color: var(--accent); }
+.btn-sm.danger:hover { color: #fca5a5; border-color: var(--danger); }
+.btn-sm.success { color: var(--success); border-color: rgba(16,185,129,0.3); }
+
+/* TABLE */
+.table-wrap { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+table { width: 100%; border-collapse: collapse; }
+thead { background: var(--bg3); }
+th { padding: 10px 16px; text-align: left; font-size: 11px; color: var(--muted); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+td { padding: 12px 16px; font-size: 13px; border-top: 1px solid var(--border); }
+tr:hover td { background: rgba(255,255,255,0.02); }
+.mono { font-family: var(--font-mono); font-size: 12px; }
+
+/* STATUS PILLS */
+.pill { font-size: 10px; padding: 3px 10px; border-radius: 20px; font-family: var(--font-mono); display: inline-block; }
+.p-scheduled { background: rgba(59,126,255,0.12); color: var(--accent2); }
+.p-boarding   { background: rgba(245,158,11,0.12); color: var(--gold); }
+.p-departed   { background: rgba(16,185,129,0.12); color: var(--success); }
+.p-delayed    { background: rgba(239,68,68,0.12); color: var(--danger); }
+.p-cancelled  { background: rgba(239,68,68,0.08); color: #f87171; }
+.p-arrived    { background: rgba(16,185,129,0.08); color: #34d399; }
+.p-active     { background: rgba(16,185,129,0.12); color: var(--success); }
+.p-confirmed  { background: rgba(59,126,255,0.12); color: var(--accent2); }
+.p-maintenance{ background: rgba(245,158,11,0.12); color: var(--gold); }
+.p-retired    { background: rgba(100,100,100,0.12); color: var(--muted); }
+
+/* MODAL */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; display: none; align-items: center; justify-content: center; }
+.modal-overlay.open { display: flex; }
+.modal { background: var(--bg2); border: 1px solid var(--border2); border-radius: 16px; padding: 2rem; width: 520px; max-width: 95vw; max-height: 90vh; overflow-y: auto; }
+.modal-title { font-family: var(--font-head); font-size: 20px; font-weight: 700; margin-bottom: 1.5rem; }
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+.field input, .field select, .field textarea { width: 100%; padding: 10px 12px; background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--font-body); font-size: 14px; outline: none; transition: border-color 0.2s; resize: vertical; }
+.field input:focus, .field select:focus, .field textarea:focus { border-color: var(--accent); }
+.field select option { background: var(--bg3); }
+.form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.modal-actions { display: flex; gap: 10px; margin-top: 1.5rem; }
+.modal-actions .btn-primary { flex: 1; padding: 11px; }
+
+/* MSG */
+.msg { padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 1rem; display: none; }
+.msg.error   { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; display: block; }
+.msg.success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #6ee7b7; display: block; }
+.loading { text-align: center; padding: 3rem; color: var(--muted); font-family: var(--font-mono); font-size: 13px; }
+.empty { text-align: center; padding: 3rem; color: var(--muted); }
+.empty-icon { font-size: 36px; margin-bottom: 0.75rem; }
+
+/* FILTER ROW */
+.filter-row { display: flex; gap: 10px; margin-bottom: 1.25rem; flex-wrap: wrap; }
+.filter-row input, .filter-row select { padding: 8px 12px; background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--font-body); font-size: 13px; outline: none; }
+.filter-row input:focus, .filter-row select:focus { border-color: var(--accent); }
+
+/* RECOMMENDATIONS */
+.rec-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem 1.5rem; margin-bottom: 12px; display: flex; gap: 1.25rem; align-items: flex-start; }
+.rec-card.applied { border-color: rgba(16,185,129,0.3); }
+.rec-icon { font-size: 28px; flex-shrink: 0; width: 44px; height: 44px; background: var(--bg3); border-radius: 10px; display: flex; align-items: center; justify-content: center; }
+.rec-body { flex: 1; }
+.rec-type { font-size: 10px; color: var(--muted); font-family: var(--font-mono); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 4px; }
+.rec-text { font-size: 14px; line-height: 1.6; margin-bottom: 8px; }
+.rec-meta { font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.rec-actions { display: flex; gap: 8px; margin-top: 10px; }
+.rec-score { font-family: var(--font-mono); font-size: 12px; padding: 3px 10px; border-radius: 20px; background: rgba(59,126,255,0.1); color: var(--accent2); }
+.engine-controls { background: var(--bg2); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin-bottom: 1.5rem; }
+.engine-title { font-family: var(--font-head); font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.engine-desc { font-size: 13px; color: var(--muted); margin-bottom: 1.25rem; }
+.engine-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+.engine-btn { padding: 9px 16px; background: var(--bg3); border: 1px solid var(--border2); color: var(--text); border-radius: 8px; font-size: 13px; cursor: pointer; font-family: var(--font-body); transition: all 0.2s; display: flex; align-items: center; gap: 6px; }
+.engine-btn:hover { border-color: var(--accent); color: var(--accent2); }
+.engine-btn.running { opacity: 0.6; cursor: not-allowed; }
+
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sidebar-logo">
+    <div class="logo-icon">✈</div>
+    <span class="logo-text">AeroBase</span>
+  </div>
+  <div class="sidebar-label">Operations</div>
+  <div class="nav-item active" onclick="showSection('overview', this)"><span class="nav-icon">📊</span> Overview</div>
+  <div class="nav-item" onclick="showSection('flights', this)"><span class="nav-icon">✈️</span> Flights</div>
+  <div class="nav-item" onclick="showSection('gates', this)"><span class="nav-icon">🚪</span> Gate Assignments</div>
+  <div class="nav-item" onclick="showSection('delays', this)"><span class="nav-icon">⏱️</span> Delay Logs</div>
+  <div class="nav-item" onclick="showSection('routes', this)"><span class="nav-icon">🛤️</span> Routes</div>
+  <div class="sidebar-label">AI Engine</div>
+  <div class="nav-item" onclick="showSection('recommendations', this)"><span class="nav-icon">🤖</span> Recommendations</div>
+  <div class="sidebar-bottom">
+    <div class="staff-badge">Signed in as Staff</div>
+    <div class="staff-email" id="staff-email">—</div>
+    <button class="logout-btn" onclick="handleLogout()">Sign Out</button>
+  </div>
+</div>
+
+<!-- MAIN CONTENT -->
+<div class="main">
+  <div class="topbar">
+    <div class="page-title-bar" id="page-title">Overview</div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span style="font-size:12px;color:var(--muted);font-family:var(--font-mono);">STAFF PORTAL</span>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- OVERVIEW -->
+    <div class="section active" id="section-overview">
+      <div class="stats-row" id="overview-stats">
+        <div class="stat-card"><div class="stat-label">Total Flights</div><div class="stat-value" id="stat-flights">—</div><div class="stat-sub">in database</div></div>
+        <div class="stat-card"><div class="stat-label">Active Today</div><div class="stat-value" id="stat-today">—</div><div class="stat-sub">scheduled or boarding</div></div>
+        <div class="stat-card"><div class="stat-label">Delay Logs</div><div class="stat-value" id="stat-delays">—</div><div class="stat-sub">training records</div></div>
+        <div class="stat-card"><div class="stat-label">Routes</div><div class="stat-value" id="stat-routes">—</div><div class="stat-sub">with distance data</div></div>
+      </div>
+      <div class="section-header"><div class="section-title">Recent Flights</div></div>
+      <div class="table-wrap"><div id="overview-flights"><div class="loading">Loading…</div></div></div>
+    </div>
+
+    <!-- FLIGHTS -->
+    <div class="section" id="section-flights">
+      <div class="section-header">
+        <div class="section-title">Flight Management</div>
+        <button class="btn-primary" onclick="openFlightModal()">+ Add Flight</button>
+      </div>
+      <div class="filter-row">
+        <select id="flight-filter-status" onchange="loadFlights()">
+          <option value="">All Statuses</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="boarding">Boarding</option>
+          <option value="departed">Departed</option>
+          <option value="delayed">Delayed</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="arrived">Arrived</option>
+        </select>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Flight</th><th>Route</th><th>Departure</th><th>Arrival</th><th>Status</th><th>Seats</th><th>Actions</th></tr></thead>
+          <tbody id="flights-tbody"><tr><td colspan="7"><div class="loading">Loading…</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- GATE ASSIGNMENTS -->
+    <div class="section" id="section-gates">
+      <div class="section-header">
+        <div class="section-title">Gate Assignments</div>
+        <button class="btn-primary" onclick="openGateModal()">+ Assign Gate</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Flight</th><th>Gate</th><th>Terminal</th><th>Type</th><th>Start</th><th>End</th><th>Actions</th></tr></thead>
+          <tbody id="gates-tbody"><tr><td colspan="7"><div class="loading">Loading…</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- DELAY LOGS -->
+    <div class="section" id="section-delays">
+      <div class="section-header">
+        <div class="section-title">Delay Logs</div>
+        <button class="btn-primary" onclick="openDelayModal()">+ Log Delay</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Flight</th><th>Reason</th><th>Delay</th><th>Reported</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="delays-tbody"><tr><td colspan="6"><div class="loading">Loading…</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- RECOMMENDATIONS -->
+    <div class="section" id="section-recommendations">
+      <div class="section-header">
+        <div class="section-title">AI Recommendations</div>
+        <button class="btn-ghost" onclick="clearApplied()">Clear Applied</button>
+      </div>
+
+      <div class="engine-controls">
+        <div class="engine-title">🤖 AI Project Recommendation Engine</div>
+        <div class="engine-desc">Uses Supabase operations data for gate optimization, delay-risk outputs from Python, and alternative flight recommendations.</div>
+        <div class="engine-btns">
+          <button class="engine-btn" id="btn-gate" onclick="runGateRecommendations(this)">🚪 Gate Assignments</button>
+          <button class="engine-btn" id="btn-rebook" onclick="runRebookingRecommendations(this)">✈️ Alternative Flights</button>
+          <button class="engine-btn" id="btn-all" onclick="runAllRecommendations(this)">⚡ Run All</button>
+        </div>
+        <div id="engine-msg" class="msg" style="margin-top:1rem;"></div>
+      </div>
+
+      <div id="rec-list"><div class="empty"><div class="empty-icon">🤖</div><div>Click a button above to generate recommendations</div></div></div>
+    </div>
+
+    <!-- ROUTES -->
+    <div class="section" id="section-routes">
+      <div class="section-header">
+        <div class="section-title">Routes</div>
+        <button class="btn-primary" onclick="openRouteModal()">+ Add Route</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Origin</th><th>Destination</th><th>Airline</th><th>Distance</th><th>Duration</th></tr></thead>
+          <tbody id="routes-tbody"><tr><td colspan="5"><div class="loading">Loading…</div></td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- FLIGHT MODAL -->
+<div class="modal-overlay" id="flight-modal">
+  <div class="modal">
+    <div class="modal-title" id="flight-modal-title">Add Flight</div>
+    <div id="flight-modal-msg" class="msg"></div>
+    <div class="form-grid">
+      <div class="field"><label>Flight Number</label><input type="text" id="fm-number" placeholder="PK-301" /></div>
+      <div class="field"><label>Status</label>
+        <select id="fm-status">
+          <option value="scheduled">Scheduled</option>
+          <option value="boarding">Boarding</option>
+          <option value="departed">Departed</option>
+          <option value="delayed">Delayed</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="arrived">Arrived</option>
+        </select>
+      </div>
+      <div class="field"><label>Airline</label><select id="fm-airline"></select></div>
+      <div class="field"><label>Route</label><select id="fm-route"></select></div>
+      <div class="field"><label>Aircraft</label><select id="fm-aircraft"><option value="">None</option></select></div>
+      <div class="field"><label>Available Seats</label><input type="number" id="fm-seats" placeholder="150" /></div>
+      <div class="field"><label>Scheduled Departure</label><input type="datetime-local" id="fm-dep" /></div>
+      <div class="field"><label>Scheduled Arrival</label><input type="datetime-local" id="fm-arr" /></div>
+      <div class="field"><label>Economy Price ($)</label><input type="number" id="fm-eco" placeholder="299" /></div>
+      <div class="field"><label>Business Price ($)</label><input type="number" id="fm-bus" placeholder="799" /></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal('flight-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveFlight()">Save Flight</button>
+    </div>
+  </div>
+</div>
+
+<!-- GATE MODAL -->
+<div class="modal-overlay" id="gate-modal">
+  <div class="modal">
+    <div class="modal-title">Assign Gate</div>
+    <div id="gate-modal-msg" class="msg"></div>
+    <div class="field"><label>Flight</label><select id="gm-flight"></select></div>
+    <div class="field"><label>Gate</label><select id="gm-gate"></select></div>
+    <div class="field"><label>Assignment Type</label>
+      <select id="gm-type">
+        <option value="departure">Departure</option>
+        <option value="arrival">Arrival</option>
+        <option value="turnaround">Turnaround</option>
+      </select>
+    </div>
+    <div class="form-grid">
+      <div class="field"><label>Start Time</label><input type="datetime-local" id="gm-start" /></div>
+      <div class="field"><label>End Time</label><input type="datetime-local" id="gm-end" /></div>
+    </div>
+    <div class="field"><label>Notes</label><textarea id="gm-notes" rows="2" placeholder="Optional notes…"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal('gate-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveGate()">Assign Gate</button>
+    </div>
+  </div>
+</div>
+
+<!-- DELAY MODAL -->
+<div class="modal-overlay" id="delay-modal">
+  <div class="modal">
+    <div class="modal-title">Log Delay</div>
+    <div id="delay-modal-msg" class="msg"></div>
+    <div class="field"><label>Flight</label><select id="dm-flight"></select></div>
+    <div class="form-grid">
+      <div class="field"><label>Reason Code</label>
+        <select id="dm-reason">
+          <option value="weather">Weather</option>
+          <option value="technical">Technical</option>
+          <option value="crew">Crew</option>
+          <option value="atc">ATC</option>
+          <option value="security">Security</option>
+          <option value="catering">Catering</option>
+          <option value="fueling">Fueling</option>
+          <option value="prev_flight">Previous Flight</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="field"><label>Delay (minutes)</label><input type="number" id="dm-minutes" placeholder="45" min="1" /></div>
+    </div>
+    <div class="field"><label>Description</label><textarea id="dm-desc" rows="2" placeholder="Describe the delay reason…"></textarea></div>
+    <div class="field"><label>New Departure Time</label><input type="datetime-local" id="dm-newdep" /></div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal('delay-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveDelay()">Log Delay</button>
+    </div>
+  </div>
+</div>
+
+<!-- ROUTE MODAL -->
+<div class="modal-overlay" id="route-modal">
+  <div class="modal">
+    <div class="modal-title">Add Route</div>
+    <div id="route-modal-msg" class="msg"></div>
+    <div class="form-grid">
+      <div class="field"><label>Origin Airport</label><select id="rm-origin"></select></div>
+      <div class="field"><label>Destination Airport</label><select id="rm-dest"></select></div>
+      <div class="field"><label>Airline</label><select id="rm-airline"></select></div>
+      <div class="field"><label>Distance (km)</label><input type="number" id="rm-distance" placeholder="2442" /></div>
+      <div class="field"><label>Duration (minutes)</label><input type="number" id="rm-duration" placeholder="210" /></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-ghost" onclick="closeModal('route-modal')">Cancel</button>
+      <button class="btn-primary" onclick="saveRoute()">Add Route</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const SUPABASE_URL = 'https://wsdbhfxucobeqfhjcggk.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzZGJoZnh1Y29iZXFmaGpjZ2drIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzkyMTgsImV4cCI6MjA5MTQxNTIxOH0.AhypTE69OECtY0Nt6bA-iaJIWhp6tfsbx4FN8g2mSGQ';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const AI_API_BASE = 'http://localhost:8010';
+
+let currentUser = null;
+let editingFlightId = null;
+
+// ---- INIT ----
+(async () => {
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) {
+    document.body.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#080c14;flex-direction:column;gap:1rem;font-family:'DM Sans',sans-serif;color:#f0f4ff;"><div style="font-size:48px;">✈️</div><div style="font-family:'Syne',sans-serif;font-size:24px;font-weight:700;">AeroBase</div><div style="color:#8a93a8;">You need to sign in to access this page.</div><a href="airport_auth.html?logout=1" style="margin-top:1rem;padding:12px 28px;background:#3b7eff;color:white;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px;">Go to Login</a></div>`;
+    return;
+  }
+  currentUser = session.user;
+  document.getElementById('staff-email').textContent = currentUser.email;
+  await loadOverview();
+  await populateDropdowns();
+})();
+
+// ---- NAV ----
+const pageTitles = { overview:'Overview', flights:'Flight Management', gates:'Gate Assignments', delays:'Delay Logs', routes:'Routes', recommendations:'AI Recommendations' };
+function showSection(name, el) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('section-' + name).classList.add('active');
+  if (el) el.classList.add('active');
+  document.getElementById('page-title').textContent = pageTitles[name] || name;
+  if (name === 'flights')  loadFlights();
+  if (name === 'gates')    loadGates();
+  if (name === 'delays')   loadDelays();
+  if (name === 'routes')   loadRoutes();
+  if (name === 'recommendations') loadRecommendations();
+}
+
+// ---- DROPDOWNS ----
+async function populateDropdowns() {
+  const [{ data: airlines }, { data: routes }, { data: aircraft }, { data: airports }, { data: flights }] = await Promise.all([
+    sb.from('airlines').select('airline_id, airline_name, iata_code').eq('is_active', true),
+    sb.from('routes').select('route_id, origin:airports!routes_origin_id_fkey(iata_code), destination:airports!routes_destination_id_fkey(iata_code), airline:airlines(iata_code)'),
+    sb.from('aircraft').select('aircraft_id, registration').eq('status', 'active'),
+    sb.from('airports').select('airport_id, iata_code, city'),
+    sb.from('flights').select('flight_id, flight_number, scheduled_departure').in('flight_status', ['scheduled','boarding','delayed']).order('scheduled_departure').limit(50),
+  ]);
+
+  const airlineOpts = (airlines || []).map(a => `<option value="${a.airline_id}">${a.airline_name} (${a.iata_code})</option>`).join('');
+  const routeOpts   = (routes || []).map(r => `<option value="${r.route_id}">${r.origin?.iata_code} → ${r.destination?.iata_code} (${r.airline?.iata_code})</option>`).join('');
+  const acOpts      = (aircraft || []).map(a => `<option value="${a.aircraft_id}">${a.registration}</option>`).join('');
+  const airportOpts = (airports || []).map(a => `<option value="${a.airport_id}">${a.city} (${a.iata_code})</option>`).join('');
+  const flightOpts  = (flights || []).map(f => `<option value="${f.flight_id}">${f.flight_number} — ${new Date(f.scheduled_departure).toLocaleDateString()}</option>`).join('');
+
+  ['fm-airline'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = airlineOpts; });
+  ['fm-route'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = routeOpts; });
+  const fmAc = document.getElementById('fm-aircraft'); if (fmAc) fmAc.innerHTML = '<option value="">None</option>' + acOpts;
+  ['rm-airline'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = airlineOpts; });
+  ['rm-origin', 'rm-dest'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = airportOpts; });
+  ['gm-flight', 'dm-flight'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = flightOpts; });
+
+  // Gates dropdown
+  const { data: gates } = await sb.from('gates').select('gate_id, gate_code, terminal:terminals(terminal_code, airport:airports(iata_code))');
+  const gateOpts = (gates || []).map(g => `<option value="${g.gate_id}">${g.terminal?.airport?.iata_code} T${g.terminal?.terminal_code} — Gate ${g.gate_code}</option>`).join('');
+  const gmGate = document.getElementById('gm-gate'); if (gmGate) gmGate.innerHTML = gateOpts || '<option value="">No gates available</option>';
+}
+
+// ---- OVERVIEW ----
+async function loadOverview() {
+  const [{ count: fc }, { count: tc }, { count: dc }, { count: rc }] = await Promise.all([
+    sb.from('flights').select('*', { count: 'exact', head: true }),
+    sb.from('flights').select('*', { count: 'exact', head: true }).in('flight_status', ['scheduled','boarding']),
+    sb.from('delay_logs').select('*', { count: 'exact', head: true }),
+    sb.from('routes').select('*', { count: 'exact', head: true }),
+  ]);
+  document.getElementById('stat-flights').textContent  = fc ?? '—';
+  document.getElementById('stat-today').textContent    = tc ?? '—';
+  document.getElementById('stat-delays').textContent   = dc ?? '—';
+  document.getElementById('stat-routes').textContent   = rc ?? '—';
+
+  const { data } = await sb.from('flights').select(`
+    flight_id, flight_number, flight_status, scheduled_departure, scheduled_arrival, available_seats,
+    airline:airlines(iata_code),
+    route:routes(origin:airports!routes_origin_id_fkey(iata_code), destination:airports!routes_destination_id_fkey(iata_code))
+  `).order('scheduled_departure', { ascending: false }).limit(8);
+
+  document.getElementById('overview-flights').innerHTML = `
+    <table><thead><tr><th>Flight</th><th>Route</th><th>Departure</th><th>Status</th><th>Seats</th></tr></thead>
+    <tbody>${(data || []).map(f => `
+      <tr>
+        <td class="mono">${f.flight_number}</td>
+        <td>${f.route?.origin?.iata_code || '?'} → ${f.route?.destination?.iata_code || '?'}</td>
+        <td>${new Date(f.scheduled_departure).toLocaleString([], {dateStyle:'short', timeStyle:'short'})}</td>
+        <td><span class="pill p-${f.flight_status}">${f.flight_status}</span></td>
+        <td>${f.available_seats}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+// ---- FLIGHTS ----
+async function loadFlights() {
+  const status = document.getElementById('flight-filter-status')?.value;
+  let q = sb.from('flights').select(`
+    flight_id, flight_number, flight_status, scheduled_departure, scheduled_arrival, available_seats,
+    airline:airlines(iata_code),
+    route:routes(origin:airports!routes_origin_id_fkey(iata_code), destination:airports!routes_destination_id_fkey(iata_code))
+  `).order('scheduled_departure', { ascending: false }).limit(50);
+  if (status) q = q.eq('flight_status', status);
+  const { data } = await q;
+  const tbody = document.getElementById('flights-tbody');
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">✈️</div><div>No flights found</div></div></td></tr>'; return; }
+  tbody.innerHTML = (data || []).map(f => `
+    <tr>
+      <td class="mono">${f.flight_number}</td>
+      <td>${f.route?.origin?.iata_code || '?'} → ${f.route?.destination?.iata_code || '?'}</td>
+      <td>${new Date(f.scheduled_departure).toLocaleString([], {dateStyle:'short', timeStyle:'short'})}</td>
+      <td>${new Date(f.scheduled_arrival).toLocaleString([], {dateStyle:'short', timeStyle:'short'})}</td>
+      <td><span class="pill p-${f.flight_status}">${f.flight_status}</span></td>
+      <td>${f.available_seats}</td>
+      <td style="display:flex;gap:6px;">
+        <button class="btn-sm" onclick="editFlight(${f.flight_id})">Edit</button>
+        <select style="padding:4px 8px;background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;" onchange="updateFlightStatus(${f.flight_id}, this.value)">
+          <option value="">Update status</option>
+          <option value="scheduled">Scheduled</option>
+          <option value="boarding">Boarding</option>
+          <option value="departed">Departed</option>
+          <option value="in_air">In Air</option>
+          <option value="landed">Landed</option>
+          <option value="arrived">Arrived</option>
+          <option value="delayed">Delayed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </td>
+    </tr>`).join('');
+}
+
+async function updateFlightStatus(flightId, status) {
+  if (!status) return;
+  await sb.from('flights').update({ flight_status: status }).eq('flight_id', flightId);
+  loadFlights();
+}
+
+function openFlightModal(flight) {
+  editingFlightId = null;
+  document.getElementById('flight-modal-title').textContent = 'Add Flight';
+  ['fm-number','fm-seats','fm-dep','fm-arr','fm-eco','fm-bus'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('flight-modal-msg').className = 'msg';
+  document.getElementById('flight-modal').classList.add('open');
+}
+
+async function editFlight(flightId) {
+  const { data: f } = await sb.from('flights').select('*').eq('flight_id', flightId).single();
+  if (!f) return;
+  editingFlightId = flightId;
+  document.getElementById('flight-modal-title').textContent = 'Edit Flight';
+  document.getElementById('fm-number').value = f.flight_number;
+  document.getElementById('fm-status').value = f.flight_status;
+  document.getElementById('fm-seats').value  = f.available_seats;
+  document.getElementById('fm-eco').value    = f.price_economy || '';
+  document.getElementById('fm-bus').value    = f.price_business || '';
+  document.getElementById('fm-dep').value    = f.scheduled_departure?.slice(0,16);
+  document.getElementById('fm-arr').value    = f.scheduled_arrival?.slice(0,16);
+  document.getElementById('fm-airline').value = f.airline_id;
+  document.getElementById('fm-route').value   = f.route_id;
+  document.getElementById('flight-modal-msg').className = 'msg';
+  document.getElementById('flight-modal').classList.add('open');
+}
+
+async function saveFlight() {
+  const payload = {
+    flight_number: document.getElementById('fm-number').value.trim(),
+    airline_id: parseInt(document.getElementById('fm-airline').value),
+    route_id: parseInt(document.getElementById('fm-route').value),
+    flight_status: document.getElementById('fm-status').value,
+    available_seats: parseInt(document.getElementById('fm-seats').value) || 0,
+    scheduled_departure: document.getElementById('fm-dep').value,
+    scheduled_arrival:   document.getElementById('fm-arr').value,
+    price_economy:  parseFloat(document.getElementById('fm-eco').value) || null,
+    price_business: parseFloat(document.getElementById('fm-bus').value) || null,
+  };
+  const aircraft_id = document.getElementById('fm-aircraft').value;
+  if (aircraft_id) payload.aircraft_id = parseInt(aircraft_id);
+  if (!payload.flight_number || !payload.scheduled_departure || !payload.scheduled_arrival) {
+    showModalMsg('flight-modal-msg', 'error', 'Please fill in required fields.'); return;
+  }
+  const { error } = editingFlightId
+    ? await sb.from('flights').update(payload).eq('flight_id', editingFlightId)
+    : await sb.from('flights').insert(payload);
+  if (error) { showModalMsg('flight-modal-msg', 'error', error.message); return; }
+  closeModal('flight-modal');
+  loadFlights();
+}
+
+// ---- GATES ----
+async function loadGates() {
+  const { data } = await sb.from('gate_assignments').select(`
+    assignment_id, assignment_type, start_time, end_time,
+    flight:flights(flight_number),
+    gate:gates(gate_code, terminal:terminals(terminal_code))
+  `).order('start_time', { ascending: false }).limit(30);
+  const tbody = document.getElementById('gates-tbody');
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">🚪</div><div>No gate assignments yet</div></div></td></tr>'; return; }
+  tbody.innerHTML = data.map(g => `
+    <tr>
+      <td class="mono">${g.flight?.flight_number || '—'}</td>
+      <td>Gate ${g.gate?.gate_code || '—'}</td>
+      <td>T${g.gate?.terminal?.terminal_code || '—'}</td>
+      <td><span class="pill p-scheduled">${g.assignment_type}</span></td>
+      <td>${new Date(g.start_time).toLocaleString([], {dateStyle:'short', timeStyle:'short'})}</td>
+      <td>${new Date(g.end_time).toLocaleString([], {dateStyle:'short', timeStyle:'short'})}</td>
+      <td><button class="btn-sm danger" onclick="deleteGateAssignment(${g.assignment_id})">Remove</button></td>
+    </tr>`).join('');
+}
+
+function openGateModal() {
+  document.getElementById('gate-modal-msg').className = 'msg';
+  ['gm-notes'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('gate-modal').classList.add('open');
+}
+
+async function saveGate() {
+  const payload = {
+    flight_id: parseInt(document.getElementById('gm-flight').value),
+    gate_id:   parseInt(document.getElementById('gm-gate').value),
+    assignment_type: document.getElementById('gm-type').value,
+    start_time: document.getElementById('gm-start').value,
+    end_time:   document.getElementById('gm-end').value,
+    notes: document.getElementById('gm-notes').value || null,
+  };
+  if (!payload.start_time || !payload.end_time) { showModalMsg('gate-modal-msg', 'error', 'Please set start and end times.'); return; }
+  const { error } = await sb.from('gate_assignments').insert(payload);
+  if (error) { showModalMsg('gate-modal-msg', 'error', error.message); return; }
+  closeModal('gate-modal');
+  loadGates();
+}
+
+async function deleteGateAssignment(id) {
+  if (!confirm('Remove this gate assignment?')) return;
+  await sb.from('gate_assignments').delete().eq('assignment_id', id);
+  loadGates();
+}
+
+// ---- DELAYS ----
+async function loadDelays() {
+  const { data } = await sb.from('delay_logs').select(`
+    delay_id, delay_reason_code, delay_minutes, reported_at, resolved_at, delay_reason_desc,
+    flight:flights(flight_number)
+  `).order('reported_at', { ascending: false }).limit(30);
+  const tbody = document.getElementById('delays-tbody');
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="6"><div class="empty"><div class="empty-icon">⏱️</div><div>No delay logs yet</div></div></td></tr>'; return; }
+  tbody.innerHTML = data.map(d => `
+    <tr>
+      <td class="mono">${d.flight?.flight_number || '—'}</td>
+      <td>${d.delay_reason_code}</td>
+      <td>${d.delay_minutes} min</td>
+      <td>${new Date(d.reported_at).toLocaleString([], {dateStyle:'short', timeStyle:'short'})}</td>
+      <td><span class="pill ${d.resolved_at ? 'p-arrived' : 'p-delayed'}">${d.resolved_at ? 'Resolved' : 'Active'}</span></td>
+      <td>${!d.resolved_at ? `<button class="btn-sm success" onclick="resolveDelay(${d.delay_id})">Resolve</button>` : '—'}</td>
+    </tr>`).join('');
+}
+
+function openDelayModal() {
+  document.getElementById('delay-modal-msg').className = 'msg';
+  ['dm-minutes','dm-desc','dm-newdep'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('delay-modal').classList.add('open');
+}
+
+async function saveDelay() {
+  const flightId = parseInt(document.getElementById('dm-flight').value);
+  const minutes  = parseInt(document.getElementById('dm-minutes').value);
+  if (!minutes || minutes < 1) { showModalMsg('delay-modal-msg', 'error', 'Enter a valid delay in minutes.'); return; }
+  const payload = {
+    flight_id: flightId,
+    delay_reason_code: document.getElementById('dm-reason').value,
+    delay_minutes: minutes,
+    delay_reason_desc: document.getElementById('dm-desc').value || null,
+    new_departure_time: document.getElementById('dm-newdep').value || null,
+  };
+  const { error } = await sb.from('delay_logs').insert(payload);
+  if (error) { showModalMsg('delay-modal-msg', 'error', error.message); return; }
+  // also update flight status to delayed
+  await sb.from('flights').update({ flight_status: 'delayed', delay_minutes: minutes }).eq('flight_id', flightId);
+  closeModal('delay-modal');
+  loadDelays();
+}
+
+async function resolveDelay(delayId) {
+  await sb.from('delay_logs').update({ resolved_at: new Date().toISOString() }).eq('delay_id', delayId);
+  loadDelays();
+}
+
+// ---- ROUTES ----
+async function loadRoutes() {
+  const { data } = await sb.from('routes').select(`
+    route_id, distance_km, typical_duration_min,
+    origin:airports!routes_origin_id_fkey(iata_code, city),
+    destination:airports!routes_destination_id_fkey(iata_code, city),
+    airline:airlines(airline_name, iata_code)
+  `).order('route_id');
+  const tbody = document.getElementById('routes-tbody');
+  if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="5"><div class="empty"><div class="empty-icon">🛤️</div><div>No routes found</div></div></td></tr>'; return; }
+  tbody.innerHTML = data.map(r => `
+    <tr>
+      <td>${r.origin?.city} <span class="mono">(${r.origin?.iata_code})</span></td>
+      <td>${r.destination?.city} <span class="mono">(${r.destination?.iata_code})</span></td>
+      <td>${r.airline?.airline_name} <span class="mono">(${r.airline?.iata_code})</span></td>
+      <td>${r.distance_km ? r.distance_km.toLocaleString() + ' km' : '—'}</td>
+      <td>${r.typical_duration_min ? Math.floor(r.typical_duration_min/60) + 'h ' + (r.typical_duration_min%60) + 'm' : '—'}</td>
+    </tr>`).join('');
+}
+
+function openRouteModal() {
+  document.getElementById('route-modal-msg').className = 'msg';
+  ['rm-distance','rm-duration'].forEach(id => document.getElementById(id).value = '');
+  document.getElementById('route-modal').classList.add('open');
+}
+
+async function saveRoute() {
+  const originId = parseInt(document.getElementById('rm-origin').value);
+  const destId   = parseInt(document.getElementById('rm-dest').value);
+  if (originId === destId) { showModalMsg('route-modal-msg', 'error', 'Origin and destination cannot be the same.'); return; }
+  const payload = {
+    origin_id:           originId,
+    destination_id:      destId,
+    airline_id:          parseInt(document.getElementById('rm-airline').value),
+    distance_km:         parseInt(document.getElementById('rm-distance').value) || null,
+    typical_duration_min: parseInt(document.getElementById('rm-duration').value) || null,
+  };
+  const { error } = await sb.from('routes').insert(payload);
+  if (error) { showModalMsg('route-modal-msg', 'error', error.message); return; }
+  closeModal('route-modal');
+  loadRoutes();
+}
+
+
+// ---- RECOMMENDATIONS ENGINE ----
+async function loadRecommendations() {
+  const { data } = await sb.from('recommendations')
+    .select('*').order('generated_at', { ascending: false }).limit(40);
+  renderRecs(data || []);
+}
+
+function renderRecs(data) {
+  const container = document.getElementById('rec-list');
+  if (!data.length) {
+    container.innerHTML = '<div class="empty"><div class="empty-icon">🤖</div><div>No recommendations yet. Run the engine above.</div></div>';
+    return;
+  }
+  const icons = { gate_assignment:'🚪', alternative_flight:'✈️', delay_prediction:'⏱️', rebooking:'✈️' };
+  container.innerHTML = data.map(r => `
+    <div class="rec-card ${r.is_applied ? 'applied' : ''}" id="rec-${r.rec_id}">
+      <div class="rec-icon">${icons[r.rec_type] || '🤖'}</div>
+      <div class="rec-body">
+        <div class="rec-type">${r.rec_type.replace(/_/g,' ')} ${r.score ? '· <span class="rec-score">Score: ' + r.score + '</span>' : ''}</div>
+        <div class="rec-text">${r.recommendation_text}</div>
+        <div class="rec-meta">Generated: ${new Date(r.generated_at).toLocaleString([], {dateStyle:'short', timeStyle:'short'})} ${r.is_applied ? '· ✅ Applied' : ''}</div>
+        <div class="rec-actions">
+          ${!r.is_applied ? `<button class="btn-sm success" onclick="applyRec(${r.rec_id})">Apply</button>` : ''}
+          <button class="btn-sm danger" onclick="deleteRec(${r.rec_id})">Dismiss</button>
+        </div>
+      </div>
+    </div>`).join('');
+}
+
+async function applyRec(recId) {
+  await sb.from('recommendations').update({ is_applied: true, applied_at: new Date().toISOString() }).eq('rec_id', recId);
+  loadRecommendations();
+}
+
+async function deleteRec(recId) {
+  await sb.from('recommendations').delete().eq('rec_id', recId);
+  loadRecommendations();
+}
+
+async function clearApplied() {
+  await sb.from('recommendations').delete().eq('is_applied', true);
+  loadRecommendations();
+}
+
+function setEngineMsg(type, text) {
+  const el = document.getElementById('engine-msg');
+  el.className = 'msg ' + type;
+  el.textContent = text;
+}
+
+async function callAIEndpoint(path) {
+  const res = await fetch(AI_API_BASE + path, { method: 'POST' });
+  if (!res.ok) {
+    let message = 'AI backend request failed.';
+    try {
+      const payload = await res.json();
+      message = payload.detail || message;
+    } catch (_) {}
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+async function runGateRecommendations(btn) {
+  btn.classList.add('running'); btn.textContent = '🚪 Analyzing…';
+  setEngineMsg('', '');
+  try {
+    const result = await callAIEndpoint('/recommendations/gates');
+    setEngineMsg('success', `Python engine generated ${result.inserted || 0} gate recommendation(s).`);
+    loadRecommendations();
+  } catch (err) {
+    setEngineMsg('error', err.message + ' Make sure FastAPI is running on port 8010.');
+  } finally {
+    btn.classList.remove('running'); btn.textContent = '🚪 Gate Assignments';
+  }
+}
+
+async function runRebookingRecommendations(btn) {
+  btn.classList.add('running'); btn.textContent = '✈️ Analyzing…';
+  setEngineMsg('', '');
+  try {
+    const result = await callAIEndpoint('/recommendations/alternative-flights');
+    setEngineMsg('success', `Python engine generated ${result.inserted || 0} alternative flight recommendation(s).`);
+    loadRecommendations();
+  } catch (err) {
+    setEngineMsg('error', err.message + ' Make sure FastAPI is running on port 8010.');
+  } finally {
+    btn.classList.remove('running'); btn.textContent = '✈️ Alternative Flights';
+  }
+}
+
+async function runAllRecommendations(btn) {
+  btn.classList.add('running'); btn.textContent = '⚡ Running all…';
+  setEngineMsg('', '');
+  try {
+    const result = await callAIEndpoint('/recommendations/run-all');
+    setEngineMsg('success', `Python engine generated ${result.inserted || 0} recommendation(s).`);
+    loadRecommendations();
+  } catch (err) {
+    setEngineMsg('error', err.message + ' Make sure FastAPI is running on port 8010.');
+  } finally {
+    btn.classList.remove('running'); btn.textContent = '⚡ Run All';
+  }
+}
+
+// ---- HELPERS ----
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function showModalMsg(id, type, text) {
+  const el = document.getElementById(id);
+  el.className = 'msg ' + type;
+  el.textContent = text;
+}
+
+async function handleLogout() {
+  await sb.auth.signOut();
+  window.location.href = 'airport_auth.html';
+}
+</script>
+</body>
+</html>

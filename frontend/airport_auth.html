@@ -1,0 +1,689 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AeroBase — Airport Management</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #080c14;
+    --bg2: #0d1320;
+    --bg3: #111827;
+    --border: rgba(255,255,255,0.08);
+    --border2: rgba(255,255,255,0.15);
+    --text: #f0f4ff;
+    --muted: #8a93a8;
+    --accent: #3b7eff;
+    --accent2: #60a5fa;
+    --gold: #f59e0b;
+    --danger: #ef4444;
+    --success: #10b981;
+    --font-head: 'Syne', sans-serif;
+    --font-body: 'DM Sans', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    display: flex;
+    overflow: auto;
+  }
+
+  /* LEFT PANEL - defined below with right panel */
+
+  .grid-bg {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(59,126,255,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(59,126,255,0.04) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  .radar {
+    position: absolute;
+    bottom: -120px;
+    left: -120px;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    border: 1px solid rgba(59,126,255,0.12);
+    animation: radarPulse 4s ease-in-out infinite;
+  }
+  .radar::before {
+    content: '';
+    position: absolute;
+    inset: 40px;
+    border-radius: 50%;
+    border: 1px solid rgba(59,126,255,0.08);
+  }
+  .radar::after {
+    content: '';
+    position: absolute;
+    inset: 100px;
+    border-radius: 50%;
+    border: 1px solid rgba(59,126,255,0.05);
+  }
+  @keyframes radarPulse {
+    0%, 100% { opacity: 0.5; transform: scale(1); }
+    50% { opacity: 1; transform: scale(1.02); }
+  }
+
+  .sweep {
+    position: absolute;
+    bottom: -120px;
+    left: -120px;
+    width: 500px;
+    height: 500px;
+    border-radius: 50%;
+    background: conic-gradient(from 0deg, transparent 0deg, rgba(59,126,255,0.15) 45deg, transparent 90deg);
+    animation: sweep 6s linear infinite;
+  }
+  @keyframes sweep { to { transform: rotate(360deg); } }
+
+  .logo-area {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--accent);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+
+  .logo-text {
+    font-family: var(--font-head);
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.5px;
+  }
+
+  .hero-text {
+    position: relative;
+    z-index: 2;
+  }
+
+  .hero-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--accent2);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .hero-label::before {
+    content: '';
+    display: inline-block;
+    width: 20px;
+    height: 1px;
+    background: var(--accent2);
+  }
+
+  .hero-title {
+    font-family: var(--font-head);
+    font-size: clamp(2rem, 4vw, 3.2rem);
+    font-weight: 800;
+    line-height: 1.05;
+    letter-spacing: -1.5px;
+    margin-bottom: 1.5rem;
+  }
+
+  .hero-title span {
+    color: var(--accent);
+  }
+
+  .hero-desc {
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.7;
+    max-width: 340px;
+  }
+
+  .stats-row {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    gap: 2rem;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .stat-num {
+    font-family: var(--font-head);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .stat-label {
+    font-size: 12px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+    letter-spacing: 0.5px;
+  }
+
+  /* LIVE FLIGHTS TICKER */
+  .ticker-wrap {
+    position: relative;
+    z-index: 2;
+    background: rgba(59,126,255,0.06);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 16px;
+    overflow: hidden;
+    margin-bottom: 2rem;
+  }
+  .ticker-label {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--accent2);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .dot-live {
+    width: 6px;
+    height: 6px;
+    background: var(--success);
+    border-radius: 50%;
+    animation: blink 1.5s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100%{opacity:1;} 50%{opacity:0.2;} }
+
+  .ticker-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+  }
+  .ticker-item:last-child { border-bottom: none; }
+  .ticker-flight { font-family: var(--font-mono); color: var(--accent2); font-size: 11px; }
+  .ticker-route { color: var(--muted); }
+  .ticker-status { font-size: 10px; padding: 2px 8px; border-radius: 4px; }
+  .s-boarding { background: rgba(245,158,11,0.15); color: var(--gold); }
+  .s-departed { background: rgba(16,185,129,0.15); color: var(--success); }
+  .s-delayed  { background: rgba(239,68,68,0.15); color: var(--danger); }
+  .s-scheduled{ background: rgba(59,126,255,0.15); color: var(--accent2); }
+
+  /* RIGHT PANEL */
+  .right-panel {
+    width: 480px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 3rem 2.5rem;
+    background: var(--bg);
+    position: relative;
+    min-height: 100vh;
+  }
+
+  .left-panel {
+    flex: 1;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    padding: 3rem;
+    overflow: hidden;
+    background: var(--bg2);
+    border-right: 1px solid var(--border);
+    min-height: 100vh;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    height: 100vh;
+  }
+
+  .form-header {
+    margin-bottom: 2rem;
+  }
+
+  .form-title {
+    font-family: var(--font-head);
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 6px;
+  }
+
+  .form-subtitle {
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  /* TAB SWITCHER */
+  .tab-row {
+    display: flex;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px;
+    margin-bottom: 1.5rem;
+    gap: 4px;
+  }
+
+  .tab-btn {
+    flex: 1;
+    padding: 8px;
+    background: transparent;
+    border: none;
+    border-radius: 7px;
+    color: var(--muted);
+    font-family: var(--font-body);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .tab-btn.active {
+    background: var(--accent);
+    color: white;
+  }
+
+  /* FORM FIELDS */
+  .field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    margin-bottom: 1.5rem;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  label {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--muted);
+    letter-spacing: 0.3px;
+  }
+
+  input[type=text], input[type=email], input[type=password], input[type=date], select {
+    width: 100%;
+    padding: 11px 14px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--font-body);
+    font-size: 14px;
+    transition: border-color 0.2s;
+    outline: none;
+  }
+  input:focus, select:focus { border-color: var(--accent); }
+  input::placeholder { color: var(--muted); }
+  select option { background: var(--bg3); }
+
+  .name-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  /* SUBMIT */
+  .submit-btn {
+    width: 100%;
+    padding: 13px;
+    background: var(--accent);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-family: var(--font-head);
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    letter-spacing: 0.3px;
+    position: relative;
+    overflow: hidden;
+  }
+  .submit-btn:hover { background: #2563eb; }
+  .submit-btn:active { transform: scale(0.99); }
+  .submit-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* MESSAGES */
+  .msg {
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    margin-bottom: 1rem;
+    display: none;
+  }
+  .msg.error { background: rgba(239,68,68,0.1); border: 1px solid rgba(239,68,68,0.3); color: #fca5a5; display: flex; align-items: center; gap: 8px; }
+  .msg.success { background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); color: #6ee7b7; display: flex; align-items: center; gap: 8px; }
+
+  .divider {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    margin: 1rem 0;
+    position: relative;
+  }
+  .divider::before, .divider::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    width: 40%;
+    height: 1px;
+    background: var(--border);
+  }
+  .divider::before { left: 0; }
+  .divider::after { right: 0; }
+
+  #auth-section { display: flex; flex-direction: column; height: 100%; justify-content: center; }
+
+  .welcome-badge {
+    background: rgba(59,126,255,0.1);
+    border: 1px solid rgba(59,126,255,0.3);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 1.5rem;
+    text-align: center;
+  }
+  .welcome-icon { font-size: 40px; margin-bottom: 10px; }
+  .welcome-name {
+    font-family: var(--font-head);
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .welcome-role {
+    font-size: 13px;
+    color: var(--muted);
+    font-family: var(--font-mono);
+  }
+
+  .nav-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: all 0.2s;
+    text-decoration: none;
+    color: var(--text);
+  }
+  .nav-card:hover { border-color: var(--accent); background: rgba(59,126,255,0.05); }
+  .nav-icon { font-size: 20px; width: 36px; text-align: center; }
+  .nav-label { font-size: 14px; font-weight: 500; }
+  .nav-desc { font-size: 12px; color: var(--muted); }
+  .nav-arrow { margin-left: auto; color: var(--muted); font-size: 16px; }
+
+  .logout-btn {
+    width: 100%;
+    padding: 10px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--muted);
+    font-family: var(--font-body);
+    font-size: 13px;
+    cursor: pointer;
+    margin-top: 1rem;
+    transition: all 0.2s;
+  }
+  .logout-btn:hover { border-color: var(--danger); color: #fca5a5; }
+
+  @media (max-width: 900px) {
+    .left-panel { display: none; }
+    .right-panel { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<!-- LEFT PANEL -->
+<div class="left-panel">
+  <div class="grid-bg"></div>
+  <div class="radar"></div>
+  <div class="sweep"></div>
+
+  <div class="logo-area">
+    <div class="logo-icon">✈</div>
+    <span class="logo-text">AeroBase</span>
+  </div>
+
+  <div class="hero-text">
+    <div class="hero-label">Airport Management System</div>
+    <h1 class="hero-title">Control the<br/><span>skies.</span><br/>From the ground.</h1>
+    <p class="hero-desc">AI-powered airport operations for gate optimization, delay prediction, and flight recommendation decision support.</p>
+  </div>
+
+  <div>
+    <div class="ticker-wrap">
+      <div class="ticker-label"><span class="dot-live"></span>Live Flight Board</div>
+      <div class="ticker-item">
+        <span class="ticker-flight">PK-301</span>
+        <span class="ticker-route">LHE → DXB</span>
+        <span class="ticker-status s-boarding">Boarding</span>
+      </div>
+      <div class="ticker-item">
+        <span class="ticker-flight">EK-625</span>
+        <span class="ticker-route">DXB → JFK</span>
+        <span class="ticker-status s-departed">Departed</span>
+      </div>
+      <div class="ticker-item">
+        <span class="ticker-flight">PA-117</span>
+        <span class="ticker-route">ISB → KHI</span>
+        <span class="ticker-status s-delayed">Delayed +40m</span>
+      </div>
+      <div class="ticker-item">
+        <span class="ticker-flight">QR-504</span>
+        <span class="ticker-route">DOH → LHR</span>
+        <span class="ticker-status s-scheduled">Scheduled</span>
+      </div>
+    </div>
+    <div class="stats-row">
+      <div class="stat">
+        <span class="stat-num">14</span>
+        <span class="stat-label">DB Tables</span>
+      </div>
+      <div class="stat">
+        <span class="stat-num">3</span>
+        <span class="stat-label">User Roles</span>
+      </div>
+      <div class="stat">
+        <span class="stat-num">Live</span>
+        <span class="stat-label">Supabase</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- RIGHT PANEL -->
+<div class="right-panel">
+
+  <!-- AUTH SECTION -->
+  <div id="auth-section">
+    <div class="form-header">
+      <h2 class="form-title" id="form-title">Welcome back</h2>
+      <p class="form-subtitle" id="form-subtitle">Sign in to your account to continue</p>
+    </div>
+
+    <div class="tab-row">
+      <button class="tab-btn active" onclick="switchTab('login')">Sign In</button>
+      <button class="tab-btn" onclick="switchTab('register')">Register</button>
+    </div>
+
+    <div id="msg" class="msg"></div>
+
+    <!-- LOGIN FORM -->
+    <div id="login-form">
+      <div class="field-group">
+        <div class="field">
+          <label>Email Address</label>
+          <input type="email" id="login-email" placeholder="you@example.com" />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="login-password" placeholder="••••••••" />
+        </div>
+      </div>
+      <button class="submit-btn" onclick="handleLogin()">Sign In</button>
+    </div>
+
+    <!-- REGISTER FORM -->
+    <div id="register-form" style="display:none;">
+      <div class="field-group">
+        <div class="name-row">
+          <div class="field">
+            <label>First Name</label>
+            <input type="text" id="reg-first" placeholder="Aadil" />
+          </div>
+          <div class="field">
+            <label>Last Name</label>
+            <input type="text" id="reg-last" placeholder="Mudassar" />
+          </div>
+        </div>
+        <div class="field">
+          <label>Email Address</label>
+          <input type="email" id="reg-email" placeholder="you@example.com" />
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="reg-password" placeholder="Min. 6 characters" />
+        </div>
+        <div class="field">
+          <label>Employee Number</label>
+          <input type="text" id="reg-empno" placeholder="EMP-001" />
+        </div>
+      </div>
+      <button class="submit-btn" onclick="handleRegister()">Create Account</button>
+    </div>
+  </div>
+
+
+</div>
+
+<script>
+const SUPABASE_URL = 'https://wsdbhfxucobeqfhjcggk.supabase.co';
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndzZGJoZnh1Y29iZXFmaGpjZ2drIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4MzkyMTgsImV4cCI6MjA5MTQxNTIxOH0.AhypTE69OECtY0Nt6bA-iaJIWhp6tfsbx4FN8g2mSGQ';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let currentTab = 'login';
+
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', (tab==='login'&&i===0)||(tab==='register'&&i===1)));
+  document.getElementById('login-form').style.display = tab === 'login' ? 'block' : 'none';
+  document.getElementById('register-form').style.display = tab === 'register' ? 'block' : 'none';
+  document.getElementById('form-title').textContent = tab === 'login' ? 'Welcome back' : 'Create account';
+  document.getElementById('form-subtitle').textContent = tab === 'login' ? 'Sign in to your account to continue' : 'Join the airport management platform';
+  clearMsg();
+}
+
+function showMsg(type, text) {
+  const el = document.getElementById('msg');
+  el.className = 'msg ' + type;
+  el.innerHTML = (type === 'error' ? '✕ ' : '✓ ') + text;
+}
+
+function clearMsg() {
+  const el = document.getElementById('msg');
+  el.className = 'msg';
+}
+
+async function handleLogin() {
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) { showMsg('error', 'Please fill in all fields.'); return; }
+
+  const btn = document.querySelector('#login-form .submit-btn');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+
+  const { data, error } = await sb.auth.signInWithPassword({ email, password });
+  btn.disabled = false; btn.textContent = 'Sign In';
+
+  if (error) { showMsg('error', error.message); return; }
+  if (!data.session) { showMsg('error', 'Sign-in did not create a session. Please confirm your email, then try again.'); return; }
+
+  // Staff-only project dashboard.
+  const { data: userRow, error: userError } = await sb.from('users').select('*').eq('email', email).single();
+  if (userError) {
+    showMsg('error', 'Signed in, but your staff profile could not be loaded: ' + userError.message);
+    return;
+  }
+  if (userRow) {
+    window.location.href = 'staff_dashboard.html';
+  } else {
+    showMsg('error', 'User profile not found. Please contact support.');
+  }
+}
+
+async function handleRegister() {
+  const first = document.getElementById('reg-first').value.trim();
+  const last  = document.getElementById('reg-last').value.trim();
+  const email = document.getElementById('reg-email').value.trim();
+  const pass  = document.getElementById('reg-password').value;
+
+  if (!first || !last || !email || !pass) { showMsg('error', 'Please fill in all required fields.'); return; }
+  if (pass.length < 6) { showMsg('error', 'Password must be at least 6 characters.'); return; }
+
+  const btn = document.querySelector('#register-form .submit-btn');
+  btn.disabled = true; btn.textContent = 'Creating account…';
+
+  // 1. Sign up via Supabase Auth
+  const { data, error } = await sb.auth.signUp({ email, password: pass });
+  if (error) { btn.disabled=false; btn.textContent='Create Account'; showMsg('error', error.message); return; }
+
+  // 2. Insert into users table as staff for this AI project scope.
+  const { error: ue } = await sb.from('users').insert({ email, role: 'staff' });
+  if (ue) { btn.disabled=false; btn.textContent='Create Account'; showMsg('error', 'Auth succeeded but profile creation failed: ' + ue.message); return; }
+
+  // 3. Insert into staff table
+  const empno = document.getElementById('reg-empno').value.trim() || ('EMP-' + Date.now());
+  await sb.from('staff_roles').upsert({ role_id: 1, role_name: 'Staff' }, { onConflict: 'role_id' });
+  await sb.from('staff').insert({ employee_number: empno, first_name: first, last_name: last, email, role_id: 1 });
+
+  btn.disabled=false; btn.textContent='Create Account';
+  showMsg('success', 'Account created! Please check your email to confirm, then sign in.');
+  setTimeout(() => switchTab('login'), 2500);
+}
+
+(async () => {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('logout') === '1') {
+    await sb.auth.signOut();
+    window.history.replaceState({}, document.title, window.location.pathname);
+    showMsg('success', 'Signed out. Please sign in again.');
+  }
+})();
+</script>
+</body>
+</html>

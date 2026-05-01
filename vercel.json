@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/",
+      "destination": "/frontend/airport_auth.html"
+    },
+    {
+      "source": "/airport_auth.html",
+      "destination": "/frontend/airport_auth.html"
+    },
+    {
+      "source": "/staff_dashboard.html",
+      "destination": "/frontend/staff_dashboard.html"
+    }
+  ]
+}
