@@ -250,7 +250,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
     <div class="section" id="section-recommendations">
       <div class="section-header">
         <div class="section-title">AI Recommendations</div>
-        <button class="btn-ghost" onclick="clearApplied()">Clear Applied</button>
+        <button class="btn-ghost" onclick="clearAllRecs()">Clear</button>
       </div>
 
       <div class="engine-controls">
@@ -793,6 +793,11 @@ async function applyRec(recId) {
 
 async function deleteRec(recId) {
   await sb.from('recommendations').delete().eq('rec_id', recId);
+  loadRecommendations();
+}
+
+async function clearAllRecs() {
+  await sb.from('recommendations').delete().neq('rec_id', 0);
   loadRecommendations();
 }
 
