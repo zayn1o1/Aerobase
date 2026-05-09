@@ -759,52 +759,31 @@ async function saveRoute() {
 
 // ---- RECOMMENDATIONS ENGINE ----
 async function loadRecommendations() {
-  const { data } = await sb.from('recommendations')
-    .select('*').order('generated_at', { ascending: false }).limit(40);
-  renderRecs(data || []);
+  document.getElementById('rec-list').innerHTML = '<div class="empty"><div class="empty-icon">🤖</div><div>Click a button above to generate recommendations</div></div>';
 }
 
 function renderRecs(data) {
   const container = document.getElementById('rec-list');
   if (!data.length) {
-    container.innerHTML = '<div class="empty"><div class="empty-icon">🤖</div><div>No recommendations yet. Run the engine above.</div></div>';
+    container.innerHTML = '<div class="empty"><div class="empty-icon">🤖</div><div>No recommendations generated.</div></div>';
     return;
   }
   const icons = { gate_assignment:'🚪', alternative_flight:'✈️', delay_prediction:'⏱️', rebooking:'✈️' };
-  container.innerHTML = data.map(r => `
-    <div class="rec-card ${r.is_applied ? 'applied' : ''}" id="rec-${r.rec_id}">
+  container.innerHTML = data.map((r, i) => `
+    <div class="rec-card" id="rec-${i}">
       <div class="rec-icon">${icons[r.rec_type] || '🤖'}</div>
       <div class="rec-body">
         <div class="rec-type">${r.rec_type.replace(/_/g,' ')} ${r.score ? '· <span class="rec-score">Score: ' + r.score + '</span>' : ''}</div>
         <div class="rec-text">${r.recommendation_text}</div>
-        <div class="rec-meta">Generated: ${new Date(r.generated_at).toLocaleString([], {dateStyle:'short', timeStyle:'short'})} ${r.is_applied ? '· ✅ Applied' : ''}</div>
         <div class="rec-actions">
-          ${!r.is_applied ? `<button class="btn-sm success" onclick="applyRec(${r.rec_id})">Apply</button>` : ''}
-          <button class="btn-sm danger" onclick="deleteRec(${r.rec_id})">Dismiss</button>
+          <button class="btn-sm danger" onclick="document.getElementById('rec-${i}').remove()">Dismiss</button>
         </div>
       </div>
     </div>`).join('');
 }
 
-async function applyRec(recId) {
-  await sb.from('recommendations').update({ is_applied: true, applied_at: new Date().toISOString() }).eq('rec_id', recId);
-  loadRecommendations();
-}
-
-async function deleteRec(recId) {
-  await sb.from('recommendations').delete().eq('rec_id', recId);
-  loadRecommendations();
-}
-
-async function clearAllRecs() {
-  await sb.from('recommendations').delete().gte('rec_id', 0);
-  document.getElementById('rec-list').innerHTML = '<div class="empty"><div class="empty-icon">🤖</div><div>No recommendations yet. Run the engine above.</div></div>';
-  await loadRecommendations();
-}
-
-async function clearApplied() {
-  await sb.from('recommendations').delete().eq('is_applied', true);
-  loadRecommendations();
+function clearAllRecs() {
+  document.getElementById('rec-list').innerHTML = '<div class="empty"><div class="empty-icon">🤖</div><div>Click a button above to generate recommendations</div></div>';
 }
 
 function setEngineMsg(type, text) {
@@ -831,8 +810,8 @@ async function runGateRecommendations(btn) {
   setEngineMsg('', '');
   try {
     const result = await callAIEndpoint('/recommendations/gates');
-    setEngineMsg('success', `Python engine generated ${result.inserted || 0} gate recommendation(s).`);
-    loadRecommendations();
+    setEngineMsg('success', `Generated ${result.inserted || 0} gate recommendation(s).`);
+    renderRecs(result.recommendations || []);
   } catch (err) {
     setEngineMsg('error', err.message + ' Make sure FastAPI is running on port 8010.');
   } finally {
@@ -845,8 +824,8 @@ async function runRebookingRecommendations(btn) {
   setEngineMsg('', '');
   try {
     const result = await callAIEndpoint('/recommendations/alternative-flights');
-    setEngineMsg('success', `Python engine generated ${result.inserted || 0} alternative flight recommendation(s).`);
-    loadRecommendations();
+    setEngineMsg('success', `Generated ${result.inserted || 0} alternative flight recommendation(s).`);
+    renderRecs(result.recommendations || []);
   } catch (err) {
     setEngineMsg('error', err.message + ' Make sure FastAPI is running on port 8010.');
   } finally {
@@ -859,8 +838,9 @@ async function runAllRecommendations(btn) {
   setEngineMsg('', '');
   try {
     const result = await callAIEndpoint('/recommendations/run-all');
-    setEngineMsg('success', `Python engine generated ${result.inserted || 0} recommendation(s).`);
-    loadRecommendations();
+    setEngineMsg('success', `Generated ${result.inserted || 0} recommendation(s).`);
+    const all = [...(result.gate_recs || []), ...(result.alt_recs || [])];
+    renderRecs(all);
   } catch (err) {
     setEngineMsg('error', err.message + ' Make sure FastAPI is running on port 8010.');
   } finally {
@@ -973,12 +953,15 @@ async function runDelayPredictions(btn) {
 
     if (highRiskIds.length > 0) {
       try {
-        await fetch(`${AI_API_BASE}/recommendations/alternative-flights/batch`, {
+        const altRes = await fetch(`${AI_API_BASE}/recommendations/alternative-flights/batch`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ flight_ids: highRiskIds })
         });
-        loadRecommendations();
+        const altData = await altRes.json();
+        if (altData.recommendations?.length > 0) {
+          renderRecs(altData.recommendations);
+        }
       } catch (_) {}
     }
 
