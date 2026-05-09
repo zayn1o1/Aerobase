@@ -960,6 +960,19 @@ async function runDelayPredictions(btn) {
 
     results.sort((a, b) => (b.delay_probability ?? -1) - (a.delay_probability ?? -1));
 
+    // Auto-trigger alternative flight recommendations for high-risk flights
+    const highRiskIds = results
+      .filter(f => f.delay_probability !== null && f.delay_probability >= 0.5)
+      .map(f => f.flight_id);
+
+    if (highRiskIds.length > 0) {
+      fetch(`${AI_API_BASE}/recommendations/alternative-flights/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flight_ids: highRiskIds })
+      }).catch(() => {});
+    }
+
     const riskClass = r => r === 'high' ? 'risk-high' : r === 'medium' ? 'risk-medium' : r === 'low' ? 'risk-low' : 'p-scheduled';
     tableDiv.innerHTML = `<table>
       <thead><tr><th>Flight</th><th>Route</th><th>Status</th><th>Delay Probability</th><th>Risk</th><th></th></tr></thead>
