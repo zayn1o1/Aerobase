@@ -161,6 +161,12 @@ def fallback_delay_probability(flight: dict[str, Any]) -> float:
 
 
 def predict_delay_probability(flight: dict[str, Any]) -> float:
+    status = flight.get("flight_status")
+    if status == "cancelled":
+        return 1.0
+    if status == "delayed":
+        delay_minutes = flight.get("delay_minutes") or 0
+        return round(min(0.95, 0.45 + delay_minutes / 240), 4)
     model_bundle = load_model()
     if not model_bundle:
         return fallback_delay_probability(flight)
