@@ -176,10 +176,8 @@ def predict_delay_probability(flight: dict[str, Any]) -> float:
 
 
 def insert_recommendations(sb: Client, recs: list[dict[str, Any]]) -> int:
-    if not recs:
-        return 0
-    result = sb.table("recommendations").insert(recs).execute()
-    return len(result.data or recs)
+    # Recommendations are no longer persisted to DB — returned directly to frontend
+    return len(recs)
 
 
 @app.get("/health")
@@ -340,14 +338,104 @@ def recommend_alternative_flights() -> dict[str, Any]:
     return {"inserted": inserted, "recommendations": recs}
 
 
+@app.post("/recommendations/alternative-flights/batch")
+def recommend_alternative_flights_batch(payload: dict[str, Any]) -> dict[str, Any]:
+    """Find alternative flights only for the given flight_ids with delay_probability >= 0.5."""
+    flight_ids: list[int] = payload.get("flight_ids", [])
+    if not flight_ids:
+        return {"inserted": 0, "recommendations": []}
+
+    sb = get_supabase()
+
+    # Fetch the at-risk flights by ID
+    at_risk_flights = (
+        sb.table("flights")
+        .select(
+            "flight_id, flight_number, airline_id, route_id, flight_status, delay_minutes, "
+            "scheduled_departure, scheduled_arrival, available_seats, price_economy, price_business, "
+            "route:routes(distance_km)"
+        )
+        .in_("flight_id", flight_ids)
+        .execute()
+        .data
+        or []
+    )
+    if not at_risk_flights:
+        return {"inserted": 0, "recommendations": []}
+
+    # Fetch all route_ids of at-risk flights to find alternatives on same routes
+    route_ids = list({f.get("route_id") for f in at_risk_flights if f.get("route_id")})
+
+    all_on_route = (
+        sb.table("flights")
+        .select(
+            "flight_id, flight_number, airline_id, route_id, flight_status, delay_minutes, "
+            "scheduled_departure, scheduled_arrival, available_seats, price_economy, price_business, "
+            "route:routes(distance_km)"
+        )
+        .in_("route_id", route_ids)
+        .in_("flight_status", ["scheduled", "boarding"])
+        .gt("scheduled_departure", now_iso())
+        .execute()
+        .data
+        or []
+    )
+
+    recs: list[dict[str, Any]] = []
+
+    for flight in at_risk_flights:
+        delay_probability = predict_delay_probability(flight)
+        alternatives = [
+            alt
+            for alt in all_on_route
+            if alt.get("route_id") == flight.get("route_id")
+            and alt.get("flight_id") != flight.get("flight_id")
+            and (alt.get("available_seats") or 0) > 0
+        ]
+        if not alternatives:
+            continue
+
+        base_price = float(flight.get("price_economy") or flight.get("price_business") or 0)
+
+        def score_alt(alt: dict[str, Any]) -> float:
+            alt_delay = predict_delay_probability(alt)
+            reliability = 1 - alt_delay
+            alt_price = float(alt.get("price_economy") or alt.get("price_business") or base_price or 1)
+            price_score = 1.0 if not base_price else max(0.0, min(1.0, base_price / alt_price))
+            availability = min(1.0, float(alt.get("available_seats") or 0) / 100)
+            return round((reliability * 0.5 + price_score * 0.3 + availability * 0.2) * 100, 1)
+
+        best = sorted(alternatives, key=score_alt, reverse=True)[0]
+        best_score = score_alt(best)
+        dep = parse_time(best.get("scheduled_departure"))
+        dep_label = dep.strftime("%Y-%m-%d %H:%M") if dep else "upcoming departure"
+        recs.append(
+            {
+                "rec_type": "alternative_flight",
+                "generated_for": "flight",
+                "entity_id": flight["flight_id"],
+                "recommendation_text": (
+                    f"Flight {flight['flight_number']} has delay risk {round(delay_probability * 100)}%. "
+                    f"Recommend alternative {best['flight_number']} departing {dep_label}: "
+                    f"{best.get('available_seats') or 0} seats available, economy fare "
+                    f"${best.get('price_economy') or 'N/A'}, ranked by delay risk, price, and availability."
+                ),
+                "score": best_score,
+            }
+        )
+
+    inserted = insert_recommendations(sb, recs)
+    return {"inserted": inserted, "recommendations": recs}
+
+
 @app.post("/recommendations/run-all")
 def run_all_recommendations() -> dict[str, Any]:
     gate_result = recommend_gates()
     alt_result = recommend_alternative_flights()
     return {
         "inserted": gate_result["inserted"] + alt_result["inserted"],
-        "gate_recommendations": gate_result["inserted"],
-        "alternative_flight_recommendations": alt_result["inserted"],
+        "gate_recs": gate_result["recommendations"],
+        "alt_recs": alt_result["recommendations"],
     }
 
 
@@ -430,6 +518,37 @@ def recommend_gate_for_flight(flight_id: int) -> dict[str, Any]:
         "terminal": None,
         "airport": None,
     }
+
+
+@app.post("/predict-delay/batch")
+def predict_delay_batch(payload: dict[str, Any]) -> dict[str, Any]:
+    flight_ids: list[int] = payload.get("flight_ids", [])
+    if not flight_ids:
+        return {"predictions": []}
+    sb = get_supabase()
+    flights = (
+        sb.table("flights")
+        .select(
+            "flight_id, flight_number, airline_id, route_id, flight_status, delay_minutes, "
+            "scheduled_departure, scheduled_arrival, available_seats, price_economy, price_business, "
+            "route:routes(distance_km)"
+        )
+        .in_("flight_id", flight_ids)
+        .execute()
+        .data
+        or []
+    )
+    predictions = []
+    for flight in flights:
+        probability = predict_delay_probability(flight)
+        predictions.append({
+            "flight_id": flight["flight_id"],
+            "flight_number": flight.get("flight_number"),
+            "delay_probability": probability,
+            "risk_level": "high" if probability >= 0.7 else "medium" if probability >= 0.4 else "low",
+            "model_loaded": MODEL_PATH.exists(),
+        })
+    return {"predictions": predictions}
 
 
 @app.get("/predict-delay/{flight_id}")
