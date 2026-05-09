@@ -941,7 +941,7 @@ async function runDelayPredictions(btn) {
     const { data: flights } = await sb.from('flights').select(`
       flight_id, flight_number, flight_status,
       route:routes(origin:airports!routes_origin_id_fkey(iata_code), destination:airports!routes_destination_id_fkey(iata_code))
-    `).in('flight_status', ['scheduled','boarding','delayed','cancelled']).order('scheduled_departure').limit(30);
+    `).in('flight_status', ['scheduled','boarding']).order('scheduled_departure').limit(30);
 
     if (!flights || flights.length === 0) {
       tableDiv.innerHTML = '<div class="empty"><div class="empty-icon">✈️</div><div>No active flights to analyze.</div></div>';
