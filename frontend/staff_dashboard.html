@@ -258,7 +258,6 @@ tr:hover td { background: rgba(255,255,255,0.02); }
         <div class="engine-desc">Uses Supabase operations data for gate optimization, delay-risk outputs from Python, and alternative flight recommendations.</div>
         <div class="engine-btns">
           <button class="engine-btn" id="btn-gate" onclick="runGateRecommendations(this)">🚪 Gate Assignments</button>
-          <button class="engine-btn" id="btn-rebook" onclick="runRebookingRecommendations(this)">✈️ Alternative Flights</button>
           <button class="engine-btn" id="btn-delay" onclick="runDelayPredictions(this)">📊 Delay Predictions</button>
           <button class="engine-btn" id="btn-all" onclick="runAllRecommendations(this)">⚡ Run All</button>
         </div>
@@ -934,14 +933,21 @@ async function runDelayPredictions(btn) {
       return;
     }
 
-    const results = await Promise.all(flights.map(async f => {
-      try {
-        const res = await fetch(`${AI_API_BASE}/predict-delay/${f.flight_id}`);
-        const d = await res.json();
-        return { ...f, delay_probability: d.delay_probability, risk_level: d.risk_level, model_loaded: d.model_loaded };
-      } catch {
-        return { ...f, delay_probability: null, risk_level: 'unknown' };
-      }
+    const flightIds = flights.map(f => f.flight_id);
+    const batchRes = await fetch(`${AI_API_BASE}/predict-delay/batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flight_ids: flightIds })
+    });
+    const batchData = await batchRes.json();
+    const predMap = {};
+    (batchData.predictions || []).forEach(p => { predMap[p.flight_id] = p; });
+
+    const results = flights.map(f => ({
+      ...f,
+      delay_probability: predMap[f.flight_id]?.delay_probability ?? null,
+      risk_level: predMap[f.flight_id]?.risk_level ?? 'unknown',
+      model_loaded: predMap[f.flight_id]?.model_loaded ?? false,
     }));
 
     results.sort((a, b) => (b.delay_probability ?? -1) - (a.delay_probability ?? -1));
@@ -950,20 +956,6 @@ async function runDelayPredictions(btn) {
     const highRiskIds = results
       .filter(f => f.delay_probability !== null && f.delay_probability >= 0.5)
       .map(f => f.flight_id);
-
-    if (highRiskIds.length > 0) {
-      try {
-        const altRes = await fetch(`${AI_API_BASE}/recommendations/alternative-flights/batch`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ flight_ids: highRiskIds })
-        });
-        const altData = await altRes.json();
-        if (altData.recommendations?.length > 0) {
-          renderRecs(altData.recommendations);
-        }
-      } catch (_) {}
-    }
 
     const riskClass = r => r === 'high' ? 'risk-high' : r === 'medium' ? 'risk-medium' : r === 'low' ? 'risk-low' : 'p-scheduled';
     tableDiv.innerHTML = `<table>
@@ -983,6 +975,17 @@ async function runDelayPredictions(btn) {
         </tr>`;
       }).join('')}</tbody>
     </table>`;
+
+    // Fire alt flights in background after table is already shown
+    if (highRiskIds.length > 0) {
+      fetch(`${AI_API_BASE}/recommendations/alternative-flights/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ flight_ids: highRiskIds })
+      }).then(r => r.json()).then(altData => {
+        if (altData.recommendations?.length > 0) renderRecs(altData.recommendations);
+      }).catch(_ => {});
+    }
   } catch (err) {
     tableDiv.innerHTML = `<div class="msg error" style="margin:1rem;">${err.message}. Make sure FastAPI is running on port 8010.</div>`;
   } finally {
