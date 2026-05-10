@@ -31,6 +31,7 @@ def fetch_flights() -> tuple[list[dict], set[int]]:
             "flight_id, airline_id, route_id, flight_status, delay_minutes, scheduled_departure, "
             "available_seats, price_economy, price_business, route:routes(distance_km)"
         )
+        .in_("flight_status", ["landed", "cancelled", "departed"])
         .execute()
         .data
         or []
