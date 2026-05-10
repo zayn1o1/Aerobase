@@ -489,7 +489,7 @@ async function populateDropdowns() {
 // ---- OVERVIEW ----
 async function loadOverview() {
   const [{ count: fc }, { count: tc }, { count: dc }, { count: rc }] = await Promise.all([
-    sb.from('flights').select('*', { count: 'exact', head: true }),
+    sb.from('flights').select('*', { count: 'exact', head: true }).not('flight_status', 'eq', 'landed'),
     sb.from('flights').select('*', { count: 'exact', head: true }).in('flight_status', ['scheduled','boarding']),
     sb.from('delay_logs').select('*', { count: 'exact', head: true }),
     sb.from('routes').select('*', { count: 'exact', head: true }),
@@ -503,7 +503,7 @@ async function loadOverview() {
     flight_id, flight_number, flight_status, scheduled_departure, scheduled_arrival, available_seats,
     airline:airlines(iata_code),
     route:routes(origin:airports!routes_origin_id_fkey(iata_code), destination:airports!routes_destination_id_fkey(iata_code))
-  `).order('scheduled_departure', { ascending: false }).limit(8);
+  `).not('flight_status', 'eq', 'landed').order('scheduled_departure', { ascending: false }).limit(8);
 
   document.getElementById('overview-flights').innerHTML = `
     <table><thead><tr><th>Flight</th><th>Route</th><th>Departure</th><th>Status</th><th>Seats</th></tr></thead>
@@ -527,6 +527,7 @@ async function loadFlights() {
     route:routes(origin:airports!routes_origin_id_fkey(iata_code), destination:airports!routes_destination_id_fkey(iata_code))
   `).order('scheduled_departure', { ascending: false }).limit(50);
   if (status) q = q.eq('flight_status', status);
+  else q = q.not('flight_status', 'eq', 'landed');
   const { data } = await q;
   const tbody = document.getElementById('flights-tbody');
   if (!data || data.length === 0) { tbody.innerHTML = '<tr><td colspan="7"><div class="empty"><div class="empty-icon">✈️</div><div>No flights found</div></div></td></tr>'; return; }
